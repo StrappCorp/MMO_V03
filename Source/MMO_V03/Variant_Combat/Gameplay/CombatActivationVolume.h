@@ -31,6 +31,10 @@ public:
 	/** Constructor */
 	ACombatActivationVolume();
 
+	/** Runtime configuration helper used by code-driven encounter setup */
+	void SetActorsToActivate(const TArray<AActor*>& InActors);
+	void AddActorToActivate(AActor* InActor);
+
 protected:
 
 	/** Handles overlaps with the box volume */

@@ -24,6 +24,19 @@ ACombatActivationVolume::ACombatActivationVolume()
 	Box->OnComponentBeginOverlap.AddDynamic(this, &ACombatActivationVolume::OnOverlap);
 }
 
+void ACombatActivationVolume::SetActorsToActivate(const TArray<AActor*>& InActors)
+{
+	ActorsToActivate = InActors;
+}
+
+void ACombatActivationVolume::AddActorToActivate(AActor* InActor)
+{
+	if (InActor)
+	{
+		ActorsToActivate.AddUnique(InActor);
+	}
+}
+
 void ACombatActivationVolume::OnOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	// has a Character entered the volume?

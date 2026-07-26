@@ -10,6 +10,7 @@
 class UCapsuleComponent;
 class UArrowComponent;
 class ACombatEnemy;
+class AActor;
 
 /**
  *  A basic Actor in charge of spawning Enemy Characters and monitoring their deaths.
@@ -58,8 +59,23 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Activation")
 	TArray<AActor*> ActorsToActivateWhenDepleted;
 
+	/** Optional actors to deactivate whenever the encounter gets activated/re-armed */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Activation")
+	TArray<AActor*> ActorsToDeactivateWhenActivated;
+
+	/** If true, the spawner can be activated again after being depleted to restart the encounter */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Enemy Spawner")
+	bool bAllowReactivationAfterDepletion = false;
+
 	/** Flag to ensure this is only activated once */
 	bool bHasBeenActivated = false;
+
+	/** Remaining number of enemies to spawn in the current activation */
+	int32 RemainingSpawnCount = 0;
+
+	/** Currently alive enemy spawned by this spawner */
+	UPROPERTY(Transient)
+	TObjectPtr<ACombatEnemy> ActiveEnemy;
 
 	/** Timer to spawn enemies after a delay */
 	FTimerHandle SpawnTimer;
@@ -77,6 +93,19 @@ public:
 	/** Cleanup */
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;
 
+	/** Runtime configuration helpers used by code-driven encounter setup */
+	void SetEnemyClass(TSubclassOf<ACombatEnemy> InEnemyClass);
+	void SetShouldSpawnEnemiesImmediately(bool bInShouldSpawnEnemiesImmediately);
+	void SetInitialSpawnDelay(float InInitialSpawnDelay);
+	void SetSpawnCount(int32 InSpawnCount);
+	void SetRespawnDelay(float InRespawnDelay);
+	void SetActivationDelay(float InActivationDelay);
+	void SetAllowReactivationAfterDepletion(bool bInAllowReactivationAfterDepletion);
+	void SetActorsToActivateWhenDepleted(const TArray<AActor*>& InActors);
+	void AddActorToActivateWhenDepleted(AActor* InActor);
+	void SetActorsToDeactivateWhenActivated(const TArray<AActor*>& InActors);
+	void AddActorToDeactivateWhenActivated(AActor* InActor);
+
 protected:
 
 	/** Spawn an enemy and subscribe to its death event */
@@ -88,6 +117,9 @@ protected:
 
 	/** Called after the last spawned enemy has died */
 	void SpawnerDepleted();
+
+	/** Utility used to notify activatable actors when the encounter state changes */
+	void NotifyActors(const TArray<AActor*>& Actors, bool bActivate);
 
 public:
 

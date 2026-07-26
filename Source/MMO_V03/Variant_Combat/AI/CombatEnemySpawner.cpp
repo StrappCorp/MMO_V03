@@ -8,6 +8,7 @@
 #include "Components/ArrowComponent.h"
 #include "TimerManager.h"
 #include "CombatEnemy.h"
+#include "CombatActivatable.h"
 
 ACombatEnemySpawner::ACombatEnemySpawner()
 {
@@ -31,6 +32,7 @@ ACombatEnemySpawner::ACombatEnemySpawner()
 void ACombatEnemySpawner::BeginPlay()
 {
 	Super::BeginPlay();
+	RemainingSpawnCount = FMath::Max(SpawnCount, 0);
 	
 	// should we spawn an enemy right away?
 	if (bShouldSpawnEnemiesImmediately)
@@ -49,8 +51,80 @@ void ACombatEnemySpawner::EndPlay(EEndPlayReason::Type EndPlayReason)
 	GetWorld()->GetTimerManager().ClearTimer(SpawnTimer);
 }
 
+void ACombatEnemySpawner::SetEnemyClass(TSubclassOf<ACombatEnemy> InEnemyClass)
+{
+	EnemyClass = InEnemyClass;
+}
+
+void ACombatEnemySpawner::SetShouldSpawnEnemiesImmediately(bool bInShouldSpawnEnemiesImmediately)
+{
+	bShouldSpawnEnemiesImmediately = bInShouldSpawnEnemiesImmediately;
+}
+
+void ACombatEnemySpawner::SetInitialSpawnDelay(float InInitialSpawnDelay)
+{
+	InitialSpawnDelay = FMath::Max(0.0f, InInitialSpawnDelay);
+}
+
+void ACombatEnemySpawner::SetSpawnCount(int32 InSpawnCount)
+{
+	SpawnCount = FMath::Max(0, InSpawnCount);
+	RemainingSpawnCount = SpawnCount;
+}
+
+void ACombatEnemySpawner::SetRespawnDelay(float InRespawnDelay)
+{
+	RespawnDelay = FMath::Max(0.0f, InRespawnDelay);
+}
+
+void ACombatEnemySpawner::SetActivationDelay(float InActivationDelay)
+{
+	ActivationDelay = FMath::Max(0.0f, InActivationDelay);
+}
+
+void ACombatEnemySpawner::SetAllowReactivationAfterDepletion(bool bInAllowReactivationAfterDepletion)
+{
+	bAllowReactivationAfterDepletion = bInAllowReactivationAfterDepletion;
+}
+
+void ACombatEnemySpawner::SetActorsToActivateWhenDepleted(const TArray<AActor*>& InActors)
+{
+	ActorsToActivateWhenDepleted = InActors;
+}
+
+void ACombatEnemySpawner::AddActorToActivateWhenDepleted(AActor* InActor)
+{
+	if (InActor)
+	{
+		ActorsToActivateWhenDepleted.AddUnique(InActor);
+	}
+}
+
+void ACombatEnemySpawner::SetActorsToDeactivateWhenActivated(const TArray<AActor*>& InActors)
+{
+	ActorsToDeactivateWhenActivated = InActors;
+}
+
+void ACombatEnemySpawner::AddActorToDeactivateWhenActivated(AActor* InActor)
+{
+	if (InActor)
+	{
+		ActorsToDeactivateWhenActivated.AddUnique(InActor);
+	}
+}
+
 void ACombatEnemySpawner::SpawnEnemy()
 {
+	if (RemainingSpawnCount <= 0)
+	{
+		return;
+	}
+
+	if (IsValid(ActiveEnemy))
+	{
+		return;
+	}
+
 	// ensure the enemy class is valid
 	if (IsValid(EnemyClass))
 	{
@@ -63,6 +137,8 @@ void ACombatEnemySpawner::SpawnEnemy()
 		// was the enemy successfully created?
 		if (SpawnedEnemy)
 		{
+			ActiveEnemy = SpawnedEnemy;
+
 			// subscribe to the death delegate
 			SpawnedEnemy->OnEnemyDied.AddDynamic(this, &ACombatEnemySpawner::OnEnemyDied);
 		}
@@ -71,11 +147,13 @@ void ACombatEnemySpawner::SpawnEnemy()
 
 void ACombatEnemySpawner::OnEnemyDied()
 {
+	ActiveEnemy = nullptr;
+
 	// decrease the spawn counter
-	--SpawnCount;
+	--RemainingSpawnCount;
 
 	// is this the last enemy we should spawn?
-	if (SpawnCount <= 0)
+	if (RemainingSpawnCount <= 0)
 	{
 		// schedule the activation on depleted message
 		GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::SpawnerDepleted, ActivationDelay);
@@ -88,14 +166,23 @@ void ACombatEnemySpawner::OnEnemyDied()
 
 void ACombatEnemySpawner::SpawnerDepleted()
 {
-	// process the actors to activate list
-	for (AActor* CurrentActor : ActorsToActivateWhenDepleted)
+	NotifyActors(ActorsToActivateWhenDepleted, true);
+}
+
+void ACombatEnemySpawner::NotifyActors(const TArray<AActor*>& Actors, bool bActivate)
+{
+	for (AActor* CurrentActor : Actors)
 	{
-		// check if the actor is activatable
 		if (ICombatActivatable* CombatActivatable = Cast<ICombatActivatable>(CurrentActor))
 		{
-			// activate the actor
-			CombatActivatable->ActivateInteraction(this);
+			if (bActivate)
+			{
+				CombatActivatable->ActivateInteraction(this);
+			}
+			else
+			{
+				CombatActivatable->DeactivateInteraction(this);
+			}
 		}
 	}
 }
@@ -107,14 +194,36 @@ void ACombatEnemySpawner::ToggleInteraction(AActor* ActivationInstigator)
 
 void ACombatEnemySpawner::ActivateInteraction(AActor* ActivationInstigator)
 {
-	// ensure we're only activated once, and only if we've deferred enemy spawning
-	if (bHasBeenActivated || bShouldSpawnEnemiesImmediately)
+	// only manual/deferred spawners should react to activation requests
+	if (bShouldSpawnEnemiesImmediately)
+	{
+		return;
+	}
+
+	if (IsValid(ActiveEnemy) || GetWorld()->GetTimerManager().IsTimerActive(SpawnTimer))
+	{
+		return;
+	}
+
+	if (RemainingSpawnCount <= 0)
+	{
+		if (!bAllowReactivationAfterDepletion)
+		{
+			return;
+		}
+
+		RemainingSpawnCount = FMath::Max(SpawnCount, 0);
+	}
+
+	if (RemainingSpawnCount <= 0)
 	{
 		return;
 	}
 
 	// raise the activation flag
 	bHasBeenActivated = true;
+
+	NotifyActors(ActorsToDeactivateWhenActivated, false);
 
 	// spawn the first enemy
 	SpawnEnemy();

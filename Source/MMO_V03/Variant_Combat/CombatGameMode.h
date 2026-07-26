@@ -8,6 +8,10 @@
 
 class ACombatStarterWeaponChoice;
 class AActor;
+class ACombatActivationVolume;
+class ACombatEnemy;
+class ACombatEnemySpawner;
+class ACombatEncounterSignal;
 
 /**
  *  Simple GameMode for a third person combat game
@@ -35,6 +39,9 @@ protected:
 
 	/** Spawns a tiny validation sandbox so the combat loop can be tested immediately in PIE */
 	void SpawnGameplayValidationSandbox();
+
+	/** Spawns a minimal micro-encounter after the starter sandbox */
+	void SpawnStarterMicroEncounter();
 
 protected:
 
@@ -90,6 +97,46 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category="Gameplay Validation Sandbox", meta=(Units="cm"))
 	float ValidationSandboxHeightOffset = 10.0f;
 
+	/** If true, spawn a minimal encounter loop after the starter sandbox */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
+	bool bSpawnStarterMicroEncounter = true;
+
+	/** Optional override for the first micro-encounter enemy spawner */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
+	TSubclassOf<ACombatEnemySpawner> StarterMicroEncounterSpawnerClass;
+
+	/** Optional override for the first micro-encounter activation volume */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
+	TSubclassOf<ACombatActivationVolume> StarterMicroEncounterActivationVolumeClass;
+
+	/** Optional override for the checkpoint volume placed before the encounter */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
+	TSubclassOf<AActor> StarterMicroEncounterCheckpointClass;
+
+	/** Optional override for the first encounter enemy */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
+	TSubclassOf<ACombatEnemy> StarterMicroEncounterEnemyClass;
+
+	/** Distance in front of the spawn where the encounter checkpoint is placed */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter", meta=(ClampMin=0, Units="cm"))
+	float StarterMicroEncounterForwardOffset = 2200.0f;
+
+	/** Additional distance to place the activation volume after the checkpoint */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter", meta=(ClampMin=0, Units="cm"))
+	float StarterMicroEncounterActivationOffset = 260.0f;
+
+	/** Additional distance to place the enemy spawner after the activation volume */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter", meta=(ClampMin=0, Units="cm"))
+	float StarterMicroEncounterEnemyOffset = 650.0f;
+
+	/** Lateral distance used to place the completion beacon beside the encounter */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter", meta=(ClampMin=0, Units="cm"))
+	float StarterMicroEncounterSignalSideOffset = 340.0f;
+
+	/** Small lift applied to encounter actors to avoid floor clipping on spawn */
+	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter", meta=(Units="cm"))
+	float StarterMicroEncounterHeightOffset = 10.0f;
+
 	/** Used to assign players to different PlayerStarts in the level */
 	int32 CurrentPlayerStartAssignment = 0;
 
@@ -98,4 +145,11 @@ protected:
 
 	/** Prevents duplicate validation sandbox spawns */
 	bool bGameplayValidationSandboxSpawned = false;
+
+	/** Prevents duplicate micro-encounter spawns */
+	bool bStarterMicroEncounterSpawned = false;
+
+	/** Keeps track of the spawned encounter signal for this map session */
+	UPROPERTY(Transient)
+	TObjectPtr<ACombatEncounterSignal> SpawnedStarterMicroEncounterSignal;
 };
