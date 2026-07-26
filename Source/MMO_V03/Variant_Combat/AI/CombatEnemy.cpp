@@ -127,6 +127,7 @@ void ACombatEnemy::DoAttackTrace(FName DamageSourceBone)
 {
 	// sweep for objects in front of the character to be hit by the attack
 	TArray<FHitResult> OutHits;
+	TSet<AActor*> DamagedActors;
 
 	// start at the provided socket location, sweep forward
 	const FVector TraceStart = GetMesh()->GetSocketLocation(DamageSourceBone);
@@ -149,14 +150,22 @@ void ACombatEnemy::DoAttackTrace(FName DamageSourceBone)
 		// iterate over each object hit
 		for (const FHitResult& CurrentHit : OutHits)
 		{
+			AActor* HitActor = CurrentHit.GetActor();
+			if (!HitActor || DamagedActors.Contains(HitActor))
+			{
+				continue;
+			}
+
 			/** does the actor have the player tag? */
-			if (CurrentHit.GetActor()->ActorHasTag(FName("Player")))
+			if (HitActor->ActorHasTag(FName("Player")))
 			{
 				// check if the actor is damageable
-				ICombatDamageable* Damageable = Cast<ICombatDamageable>(CurrentHit.GetActor());
+				ICombatDamageable* Damageable = Cast<ICombatDamageable>(HitActor);
 
 				if (Damageable)
 				{
+					DamagedActors.Add(HitActor);
+
 					// knock upwards and away from the impact normal
 					const FVector Impulse = (CurrentHit.ImpactNormal * -MeleeKnockbackImpulse) + (FVector::UpVector * MeleeLaunchImpulse);
 

@@ -431,6 +431,7 @@ void ACombatCharacter::DoAttackTrace(FName DamageSourceBone)
 {
 	// sweep for objects in front of the character to be hit by the attack
 	TArray<FHitResult> OutHits;
+	TSet<AActor*> DamagedActors;
 
 	// start at the provided socket location, sweep forward
 	const FVector TraceStart = GetMesh()->GetSocketLocation(DamageSourceBone);
@@ -454,11 +455,19 @@ void ACombatCharacter::DoAttackTrace(FName DamageSourceBone)
 		// iterate over each object hit
 		for (const FHitResult& CurrentHit : OutHits)
 		{
+			AActor* HitActor = CurrentHit.GetActor();
+			if (!HitActor || DamagedActors.Contains(HitActor))
+			{
+				continue;
+			}
+
 			// check if we've hit a damageable actor
-			ICombatDamageable* Damageable = Cast<ICombatDamageable>(CurrentHit.GetActor());
+			ICombatDamageable* Damageable = Cast<ICombatDamageable>(HitActor);
 
 			if (Damageable)
 			{
+				DamagedActors.Add(HitActor);
+
 				// knock upwards and away from the impact normal
 				const FVector Impulse = (CurrentHit.ImpactNormal * -MeleeKnockbackImpulse) + (FVector::UpVector * MeleeLaunchImpulse);
 
@@ -527,6 +536,7 @@ void ACombatCharacter::NotifyEnemiesOfIncomingAttack()
 {
 	// sweep for objects in front of the character to be hit by the attack
 	TArray<FHitResult> OutHits;
+	TSet<AActor*> WarnedActors;
 
 	// start at the actor location, sweep forward
 	const FVector TraceStart = GetActorLocation();
@@ -549,11 +559,19 @@ void ACombatCharacter::NotifyEnemiesOfIncomingAttack()
 		// iterate over each object hit
 		for (const FHitResult& CurrentHit : OutHits)
 		{
+			AActor* HitActor = CurrentHit.GetActor();
+			if (!HitActor || WarnedActors.Contains(HitActor))
+			{
+				continue;
+			}
+
 			// check if we've hit a damageable actor
-			ICombatDamageable* Damageable = Cast<ICombatDamageable>(CurrentHit.GetActor());
+			ICombatDamageable* Damageable = Cast<ICombatDamageable>(HitActor);
 
 			if (Damageable)
 			{
+				WarnedActors.Add(HitActor);
+
 				// notify the enemy
 				Damageable->NotifyDanger(GetActorLocation(), this);
 			}
@@ -758,4 +776,3 @@ void ACombatCharacter::OnRep_PlayerState()
 	RefreshObservedCombatPlayerState();
 	RefreshStarterWeaponFromPlayerState();
 }
-

@@ -7,7 +7,21 @@
 #include "CombatStarterWeaponTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/PlayerStart.h"
+#include "GameFramework/Actor.h"
 #include "Engine/World.h"
+
+namespace
+{
+	TSubclassOf<AActor> ResolveValidationActorClass(TSubclassOf<AActor> OverrideClass, const TCHAR* FallbackPath)
+	{
+		if (OverrideClass)
+		{
+			return OverrideClass;
+		}
+
+		return LoadClass<AActor>(nullptr, FallbackPath);
+	}
+}
 
 ACombatGameMode::ACombatGameMode()
 {
@@ -19,6 +33,7 @@ void ACombatGameMode::BeginPlay()
 	Super::BeginPlay();
 
 	SpawnStarterWeaponChoices();
+	SpawnGameplayValidationSandbox();
 
 	// create each additional local player.
 	// Player 0 will be created automatically as part of regular game init
@@ -102,6 +117,78 @@ void ACombatGameMode::SpawnStarterWeaponChoices()
 		if (ACombatStarterWeaponChoice* ChoiceActor = GetWorld()->SpawnActor<ACombatStarterWeaponChoice>(ChoiceClassToSpawn, SpawnLocation, SpawnRotation, SpawnParameters))
 		{
 			ChoiceActor->SetStarterWeaponType(StarterChoices[ChoiceIndex]);
+		}
+	}
+}
+
+void ACombatGameMode::SpawnGameplayValidationSandbox()
+{
+	if (bGameplayValidationSandboxSpawned || !bSpawnGameplayValidationSandbox || !GetWorld())
+	{
+		return;
+	}
+
+	bGameplayValidationSandboxSpawned = true;
+
+	TArray<AActor*> PlayerStarts;
+	UGameplayStatics::GetAllActorsOfClassWithTag(GetWorld(), APlayerStart::StaticClass(), FName(TEXT("Player0")), PlayerStarts);
+	if (PlayerStarts.IsEmpty())
+	{
+		UGameplayStatics::GetAllActorsOfClass(GetWorld(), APlayerStart::StaticClass(), PlayerStarts);
+	}
+
+	const AActor* AnchorActor = PlayerStarts.IsEmpty() ? nullptr : PlayerStarts[0];
+	const FVector AnchorLocation = AnchorActor ? AnchorActor->GetActorLocation() : FVector::ZeroVector;
+	const FRotator AnchorRotation = AnchorActor ? AnchorActor->GetActorRotation() : FRotator::ZeroRotator;
+	const FVector ForwardVector = AnchorRotation.Vector();
+	const FVector RightVector = FRotationMatrix(AnchorRotation).GetUnitAxis(EAxis::Y);
+	const FVector SpawnBaseLocation = AnchorLocation
+		+ (ForwardVector * ValidationSandboxForwardOffset)
+		+ FVector(0.0f, 0.0f, ValidationSandboxHeightOffset);
+
+	const TSubclassOf<AActor> BreakableClass = ResolveValidationActorClass(
+		ValidationBreakableClass,
+		TEXT("/Game/Variant_Combat/Blueprints/Interactables/BP_CombatDamageableBox.BP_CombatDamageableBox_C"));
+	const TSubclassOf<AActor> DummyClass = ResolveValidationActorClass(
+		ValidationDummyClass,
+		TEXT("/Game/Variant_Combat/Blueprints/Interactables/BP_CombatDummy.BP_CombatDummy_C"));
+	const TSubclassOf<AActor> HazardClass = ResolveValidationActorClass(
+		ValidationHazardClass,
+		TEXT("/Game/Variant_Combat/Blueprints/Interactables/BP_CombatLavaFloor.BP_CombatLavaFloor_C"));
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	if (BreakableClass)
+	{
+		if (AActor* Breakable = GetWorld()->SpawnActor<AActor>(
+			BreakableClass,
+			SpawnBaseLocation - (RightVector * ValidationSandboxSideOffset),
+			AnchorRotation,
+			SpawnParameters))
+		{
+			Breakable->Tags.AddUnique(FName(TEXT("CombatValidationSandbox")));
+		}
+	}
+
+	if (DummyClass)
+	{
+		if (AActor* Dummy = GetWorld()->SpawnActor<AActor>(
+			DummyClass,
+			SpawnBaseLocation + (RightVector * ValidationSandboxSideOffset),
+			AnchorRotation,
+			SpawnParameters))
+		{
+			Dummy->Tags.AddUnique(FName(TEXT("CombatValidationSandbox")));
+		}
+	}
+
+	if (HazardClass)
+	{
+		const FVector HazardLocation = SpawnBaseLocation + (ForwardVector * ValidationHazardForwardOffset);
+		if (AActor* Hazard = GetWorld()->SpawnActor<AActor>(HazardClass, HazardLocation, AnchorRotation, SpawnParameters))
+		{
+			Hazard->Tags.AddUnique(FName(TEXT("CombatValidationSandbox")));
 		}
 	}
 }
