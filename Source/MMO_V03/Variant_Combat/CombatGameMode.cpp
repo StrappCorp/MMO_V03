@@ -96,9 +96,11 @@ void ACombatGameMode::SpawnStarterWeaponChoices()
 	const FVector SpawnBaseLocation = AnchorLocation + (ForwardVector * StarterChoiceForwardOffset) + FVector(0.0f, 0.0f, StarterChoiceHeightOffset);
 	const FRotator SpawnRotation = AnchorRotation + FRotator(0.0f, 180.0f, 0.0f);
 
-	const TSubclassOf<ACombatStarterWeaponChoice> ChoiceClassToSpawn = StarterWeaponChoiceClass
-		? StarterWeaponChoiceClass
-		: ACombatStarterWeaponChoice::StaticClass();
+	TSubclassOf<ACombatStarterWeaponChoice> ChoiceClassToSpawn = StarterWeaponChoiceClass;
+	if (!ChoiceClassToSpawn)
+	{
+		ChoiceClassToSpawn = ACombatStarterWeaponChoice::StaticClass();
+	}
 
 	const ECombatStarterWeaponType StarterChoices[] = {
 		ECombatStarterWeaponType::Sword,
