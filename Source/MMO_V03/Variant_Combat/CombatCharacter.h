@@ -7,11 +7,14 @@
 #include "CombatAttacker.h"
 #include "CombatDamageable.h"
 #include "Animation/AnimInstance.h"
+#include "CombatStarterWeaponTypes.h"
 #include "CombatCharacter.generated.h"
 
+class ACombatPlayerState;
 class USpringArmComponent;
 class UCameraComponent;
 class UInputAction;
+class UStaticMeshComponent;
 struct FInputActionValue;
 class UCombatLifeBar;
 class UWidgetComponent;
@@ -42,6 +45,10 @@ class ACombatCharacter : public ACharacter, public ICombatAttacker, public IComb
 	/** Life bar widget component */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UWidgetComponent* LifeBar;
+
+	/** Minimal runtime-equipped starter weapon visual */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* EquippedStarterWeaponVisual;
 	
 protected:
 
@@ -178,6 +185,28 @@ protected:
 	/** Time to wait before respawning the character */
 	UPROPERTY(EditAnywhere, Category="Respawn", meta = (ClampMin = 0, ClampMax = 10, Units = "s"))
 	float RespawnTime = 3.0f;
+
+	/** Bone/socket where the starter weapon primitive is attached */
+	UPROPERTY(EditAnywhere, Category="Starter Weapon")
+	FName StarterWeaponAttachBoneName = TEXT("hand_r");
+
+	/** Current replicated starter-weapon view resolved from the PlayerState */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Starter Weapon")
+	ECombatStarterWeaponType CurrentStarterWeapon = ECombatStarterWeaponType::Unarmed;
+
+	/** True once a starter weapon was claimed in the hub */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Starter Weapon")
+	bool bHasClaimedStarterWeapon = false;
+
+	/** Cached combat player state used to mirror starter-weapon changes */
+	UPROPERTY()
+	TObjectPtr<ACombatPlayerState> CachedCombatPlayerState;
+
+	/** Cached baseline melee tuning used when switching between starter weapon presets */
+	bool bStarterWeaponBaseStatsCached = false;
+	float BaseMeleeDamage = 0.0f;
+	float BaseMeleeTraceDistance = 0.0f;
+	float BaseMeleeTraceRadius = 0.0f;
 
 	/** Attack montage ended delegate */
 	FOnMontageEnded OnAttackMontageEnded;
@@ -327,8 +356,20 @@ protected:
 	/** Handles input bindings */
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	/** Handles possessed initialization */
+	/** Handles possession and PlayerState changes */
 	virtual void NotifyControllerChanged() override;
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
+
+	UFUNCTION()
+	void HandleStarterWeaponChanged();
+
+	void RefreshObservedCombatPlayerState();
+	void RefreshStarterWeaponFromPlayerState();
+	void CacheStarterWeaponBaseStats();
+	void ApplyStarterWeaponState(ECombatStarterWeaponType StarterWeapon, bool bStarterWeaponClaimed);
+	void RefreshStarterWeaponVisual();
+	UStaticMesh* LoadStarterWeaponVisualMesh(ECombatStarterWeaponType StarterWeapon) const;
 
 public:
 

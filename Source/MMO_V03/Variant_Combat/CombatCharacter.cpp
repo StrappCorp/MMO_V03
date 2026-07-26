@@ -2,19 +2,21 @@
 
 
 #include "CombatCharacter.h"
-#include "Components/CapsuleComponent.h"
-#include "Components/WidgetComponent.h"
-#include "GameFramework/CharacterMovementComponent.h"
-#include "GameFramework/SpringArmComponent.h"
-#include "Components/SkeletalMeshComponent.h"
+#include "CombatPlayerController.h"
+#include "CombatPlayerState.h"
 #include "Camera/CameraComponent.h"
-#include "EnhancedInputSubsystems.h"
-#include "EnhancedInputComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "CombatLifeBar.h"
 #include "Engine/DamageEvents.h"
-#include "TimerManager.h"
 #include "Engine/LocalPlayer.h"
-#include "CombatPlayerController.h"
+#include "EnhancedInputComponent.h"
+#include "EnhancedInputSubsystems.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "TimerManager.h"
 
 ACombatCharacter::ACombatCharacter()
 {
@@ -46,6 +48,14 @@ ACombatCharacter::ACombatCharacter()
 	// create the life bar widget component
 	LifeBar = CreateDefaultSubobject<UWidgetComponent>(TEXT("LifeBar"));
 	LifeBar->SetupAttachment(RootComponent);
+
+	// create the minimal starter weapon visual
+	EquippedStarterWeaponVisual = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("EquippedStarterWeaponVisual"));
+	EquippedStarterWeaponVisual->SetupAttachment(GetMesh());
+	EquippedStarterWeaponVisual->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	EquippedStarterWeaponVisual->SetCanEverAffectNavigation(false);
+	EquippedStarterWeaponVisual->SetCastShadow(false);
+	EquippedStarterWeaponVisual->SetVisibility(false);
 
 	// set the player tag
 	Tags.Add(FName("Player"));
@@ -90,6 +100,159 @@ void ACombatCharacter::ToggleCamera()
 {
 	// call the BP hook
 	BP_ToggleCamera();
+}
+
+void ACombatCharacter::HandleStarterWeaponChanged()
+{
+	RefreshStarterWeaponFromPlayerState();
+}
+
+void ACombatCharacter::RefreshObservedCombatPlayerState()
+{
+	ACombatPlayerState* NextCombatPlayerState = GetPlayerState<ACombatPlayerState>();
+	if (CachedCombatPlayerState == NextCombatPlayerState)
+	{
+		return;
+	}
+
+	if (CachedCombatPlayerState)
+	{
+		CachedCombatPlayerState->OnStarterWeaponChanged.RemoveDynamic(this, &ACombatCharacter::HandleStarterWeaponChanged);
+	}
+
+	CachedCombatPlayerState = NextCombatPlayerState;
+	if (CachedCombatPlayerState)
+	{
+		CachedCombatPlayerState->OnStarterWeaponChanged.AddDynamic(this, &ACombatCharacter::HandleStarterWeaponChanged);
+	}
+}
+
+void ACombatCharacter::RefreshStarterWeaponFromPlayerState()
+{
+	const ACombatPlayerState* CombatPlayerState = CachedCombatPlayerState
+		? CachedCombatPlayerState.Get()
+		: GetPlayerState<ACombatPlayerState>();
+
+	if (CombatPlayerState)
+	{
+		ApplyStarterWeaponState(
+			CombatPlayerState->GetEquippedStarterWeapon(),
+			CombatPlayerState->HasClaimedInitialStarterWeapon());
+		return;
+	}
+
+	ApplyStarterWeaponState(ECombatStarterWeaponType::Unarmed, false);
+}
+
+void ACombatCharacter::CacheStarterWeaponBaseStats()
+{
+	if (bStarterWeaponBaseStatsCached)
+	{
+		return;
+	}
+
+	bStarterWeaponBaseStatsCached = true;
+	BaseMeleeDamage = MeleeDamage;
+	BaseMeleeTraceDistance = MeleeTraceDistance;
+	BaseMeleeTraceRadius = MeleeTraceRadius;
+}
+
+void ACombatCharacter::ApplyStarterWeaponState(ECombatStarterWeaponType StarterWeapon, bool bStarterWeaponClaimed)
+{
+	CacheStarterWeaponBaseStats();
+
+	CurrentStarterWeapon = StarterWeapon;
+	bHasClaimedStarterWeapon = bStarterWeaponClaimed;
+
+	MeleeDamage = BaseMeleeDamage;
+	MeleeTraceDistance = BaseMeleeTraceDistance;
+	MeleeTraceRadius = BaseMeleeTraceRadius;
+
+	switch (StarterWeapon)
+	{
+	case ECombatStarterWeaponType::Sword:
+		MeleeDamage = BaseMeleeDamage + 0.5f;
+		MeleeTraceDistance = BaseMeleeTraceDistance + 35.0f;
+		MeleeTraceRadius = BaseMeleeTraceRadius + 10.0f;
+		break;
+	case ECombatStarterWeaponType::Dagger:
+		MeleeDamage = BaseMeleeDamage + 0.25f;
+		MeleeTraceDistance = BaseMeleeTraceDistance + 10.0f;
+		MeleeTraceRadius = FMath::Max(20.0f, BaseMeleeTraceRadius - 10.0f);
+		break;
+	case ECombatStarterWeaponType::ChannelingOrb:
+		MeleeDamage = BaseMeleeDamage;
+		MeleeTraceDistance = BaseMeleeTraceDistance + 45.0f;
+		MeleeTraceRadius = BaseMeleeTraceRadius + 15.0f;
+		break;
+	default:
+		break;
+	}
+
+	RefreshStarterWeaponVisual();
+}
+
+void ACombatCharacter::RefreshStarterWeaponVisual()
+{
+	if (!EquippedStarterWeaponVisual)
+	{
+		return;
+	}
+
+	if (!bHasClaimedStarterWeapon || CurrentStarterWeapon == ECombatStarterWeaponType::Unarmed)
+	{
+		EquippedStarterWeaponVisual->SetStaticMesh(nullptr);
+		EquippedStarterWeaponVisual->SetVisibility(false, true);
+		return;
+	}
+
+	if (USkeletalMeshComponent* CharacterMesh = GetMesh())
+	{
+		EquippedStarterWeaponVisual->AttachToComponent(
+			CharacterMesh,
+			FAttachmentTransformRules::SnapToTargetNotIncludingScale,
+			StarterWeaponAttachBoneName);
+	}
+
+	EquippedStarterWeaponVisual->SetStaticMesh(LoadStarterWeaponVisualMesh(CurrentStarterWeapon));
+	EquippedStarterWeaponVisual->SetVisibility(EquippedStarterWeaponVisual->GetStaticMesh() != nullptr, true);
+
+	switch (CurrentStarterWeapon)
+	{
+	case ECombatStarterWeaponType::Sword:
+		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(6.0f, 0.0f, 0.0f));
+		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.06f, 0.02f, 0.75f));
+		break;
+	case ECombatStarterWeaponType::Dagger:
+		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
+		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.45f));
+		break;
+	case ECombatStarterWeaponType::ChannelingOrb:
+		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
+		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.16f));
+		break;
+	default:
+		EquippedStarterWeaponVisual->SetVisibility(false, true);
+		break;
+	}
+}
+
+UStaticMesh* ACombatCharacter::LoadStarterWeaponVisualMesh(ECombatStarterWeaponType StarterWeapon) const
+{
+	switch (StarterWeapon)
+	{
+	case ECombatStarterWeaponType::Sword:
+		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	case ECombatStarterWeaponType::Dagger:
+		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+	case ECombatStarterWeaponType::ChannelingOrb:
+		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+	default:
+		return nullptr;
+	}
 }
 
 void ACombatCharacter::DoMove(float Right, float Forward)
@@ -517,12 +680,23 @@ void ACombatCharacter::BeginPlay()
 	// set the life bar color
 	LifeBarWidget->SetBarColor(LifeBarColor);
 
+	// cache the baseline combat values before the starter weapon mutates them
+	CacheStarterWeaponBaseStats();
+	RefreshObservedCombatPlayerState();
+	RefreshStarterWeaponFromPlayerState();
+
 	// reset HP to maximum
 	ResetHP();
 }
 
 void ACombatCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (CachedCombatPlayerState)
+	{
+		CachedCombatPlayerState->OnStarterWeaponChanged.RemoveDynamic(this, &ACombatCharacter::HandleStarterWeaponChanged);
+		CachedCombatPlayerState = nullptr;
+	}
+
 	Super::EndPlay(EndPlayReason);
 
 	// clear the respawn timer
@@ -559,10 +733,29 @@ void ACombatCharacter::NotifyControllerChanged()
 {
 	Super::NotifyControllerChanged();
 
+	RefreshObservedCombatPlayerState();
+	RefreshStarterWeaponFromPlayerState();
+
 	// update the respawn transform on the Player Controller
 	if (ACombatPlayerController* PC = Cast<ACombatPlayerController>(GetController()))
 	{
 		PC->SetRespawnTransform(GetActorTransform());
 	}
+}
+
+void ACombatCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	RefreshObservedCombatPlayerState();
+	RefreshStarterWeaponFromPlayerState();
+}
+
+void ACombatCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	RefreshObservedCombatPlayerState();
+	RefreshStarterWeaponFromPlayerState();
 }
 
