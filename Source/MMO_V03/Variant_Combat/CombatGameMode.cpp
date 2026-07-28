@@ -4,6 +4,8 @@
 #include "Variant_Combat/CombatGameMode.h"
 #include "AI/CombatEnemy.h"
 #include "AI/CombatEnemySpawner.h"
+#include "CombatCharacter.h"
+#include "CombatPlayerController.h"
 #include "CombatPlayerState.h"
 #include "Gameplay/CombatActivationVolume.h"
 #include "Gameplay/CombatEncounterSignal.h"
@@ -13,6 +15,7 @@
 #include "GameFramework/PlayerStart.h"
 #include "GameFramework/Actor.h"
 #include "Engine/World.h"
+#include "UObject/ConstructorHelpers.h"
 
 namespace
 {
@@ -41,6 +44,20 @@ namespace
 ACombatGameMode::ACombatGameMode()
 {
 	PlayerStateClass = ACombatPlayerState::StaticClass();
+	PlayerControllerClass = ACombatPlayerController::StaticClass();
+	DefaultPawnClass = ACombatCharacter::StaticClass();
+
+	static ConstructorHelpers::FClassFinder<APlayerController> CombatPlayerControllerBP(TEXT("/Game/Variant_Combat/Blueprints/BP_CombatPlayerController"));
+	if (CombatPlayerControllerBP.Class)
+	{
+		PlayerControllerClass = CombatPlayerControllerBP.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<APawn> CombatCharacterBP(TEXT("/Game/Variant_Combat/Blueprints/BP_CombatCharacter"));
+	if (CombatCharacterBP.Class)
+	{
+		DefaultPawnClass = CombatCharacterBP.Class;
+	}
 }
 
 void ACombatGameMode::BeginPlay()
