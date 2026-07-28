@@ -53,6 +53,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category="Starter Weapon Hub")
 	TSubclassOf<ACombatStarterWeaponChoice> StarterWeaponChoiceClass;
 
+	/** If true, spawn the starter-weapon choice actors near the player start */
+	UPROPERTY(EditDefaultsOnly, Category="Starter Weapon Hub")
+	bool bSpawnStarterWeaponChoices = false;
+
 	/** Distance in front of the spawn where starter choices will appear */
 	UPROPERTY(EditDefaultsOnly, Category="Starter Weapon Hub", meta=(ClampMin=0, Units="cm"))
 	float StarterChoiceForwardOffset = 450.0f;
@@ -67,7 +71,7 @@ protected:
 
 	/** If true, spawn a lightweight combat sandbox near the player start for end-to-end gameplay validation */
 	UPROPERTY(EditDefaultsOnly, Category="Gameplay Validation Sandbox")
-	bool bSpawnGameplayValidationSandbox = true;
+	bool bSpawnGameplayValidationSandbox = false;
 
 	/** Optional override for the breakable actor used in the validation sandbox */
 	UPROPERTY(EditDefaultsOnly, Category="Gameplay Validation Sandbox")
@@ -99,7 +103,7 @@ protected:
 
 	/** If true, spawn a minimal encounter loop after the starter sandbox */
 	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")
-	bool bSpawnStarterMicroEncounter = true;
+	bool bSpawnStarterMicroEncounter = false;
 
 	/** Optional override for the first micro-encounter enemy spawner */
 	UPROPERTY(EditDefaultsOnly, Category="Micro Encounter")

@@ -107,7 +107,7 @@ AActor* ACombatGameMode::ChoosePlayerStart_Implementation(AController* Player)
 
 void ACombatGameMode::SpawnStarterWeaponChoices()
 {
-	if (bStarterChoicesSpawned || !GetWorld())
+	if (bStarterChoicesSpawned || !bSpawnStarterWeaponChoices || !GetWorld())
 	{
 		return;
 	}
