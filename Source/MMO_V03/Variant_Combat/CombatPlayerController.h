@@ -7,7 +7,10 @@
 #include "CombatPlayerController.generated.h"
 
 class UInputMappingContext;
+class UUserWidget;
+class UCombatDebugTextPanelWidget;
 class ACombatCharacter;
+class ACombatPlayerState;
 
 /**
  *  Simple Player Controller for a third person combat game
@@ -48,6 +51,17 @@ protected:
 	/** Transform to respawn the character at. Can be set to create checkpoints */
 	FTransform RespawnTransform;
 
+	/** Minimal native window restored for inventory + equipment (MMOV02-style access on I). */
+	UPROPERTY()
+	TObjectPtr<UCombatDebugTextPanelWidget> CombatInventoryWidget;
+
+	/** Minimal native window restored for combat skill levels (MMOV02-style access on K). */
+	UPROPERTY()
+	TObjectPtr<UCombatDebugTextPanelWidget> CombatSkillsWidget;
+
+	bool bIsCombatInventoryOpen = false;
+	bool bIsCombatSkillsOpen = false;
+
 protected:
 
 	/** Gameplay initialization */
@@ -72,5 +86,25 @@ protected:
 
 	/** Returns true if the player should use UMG touch controls */
 	bool ShouldUseTouchControls() const;
+
+	void HandleToggleCombatInventoryInput();
+	void HandleToggleCombatSkillsInput();
+	void HandleCloseCombatInterfaceInput();
+	void EnsureCombatInventoryWidget();
+	void EnsureCombatSkillsWidget();
+	void RefreshCombatInventoryWidget();
+	void RefreshCombatSkillsWidget();
+	void OpenCombatInventoryWidget();
+	void CloseCombatInventoryWidget();
+	void ToggleCombatInventoryWidget();
+	void OpenCombatSkillsWidget();
+	void CloseCombatSkillsWidget();
+	void ToggleCombatSkillsWidget();
+	void UpdateDebugWidgetInputMode();
+	ACombatCharacter* GetCombatCharacter() const;
+	const ACombatPlayerState* GetCombatPlayerState() const;
+	FString BuildCombatInventoryBodyText() const;
+	FString BuildCombatSkillsBodyText() const;
+
 
 };

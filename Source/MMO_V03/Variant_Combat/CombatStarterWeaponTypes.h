@@ -9,7 +9,7 @@ enum class ECombatStarterWeaponType : uint8
 	Unarmed UMETA(DisplayName="Mains nues"),
 	Sword UMETA(DisplayName="Épée"),
 	Dagger UMETA(DisplayName="Dague"),
-	ChannelingOrb UMETA(DisplayName="Orbe canalisatrice")
+	ChannelingOrb UMETA(DisplayName="Baguette magique")
 };
 
 namespace CombatStarterWeapon
@@ -72,7 +72,7 @@ namespace CombatStarterWeapon
 		case ECombatStarterWeaponType::Dagger:
 			return FText::FromString(TEXT("Dague"));
 		case ECombatStarterWeaponType::ChannelingOrb:
-			return FText::FromString(TEXT("Orbe canalisatrice"));
+			return FText::FromString(TEXT("Baguette magique"));
 		default:
 			return FText::FromString(TEXT("Mains nues"));
 		}

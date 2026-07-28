@@ -12,10 +12,12 @@
 #include "CombatLifeBar.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/StaticMesh.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "InputCoreTypes.h"
 #include "TimerManager.h"
 
 ACombatCharacter::ACombatCharacter()
@@ -29,13 +31,14 @@ ACombatCharacter::ACombatCharacter()
 	GetCapsuleComponent()->InitCapsuleSize(35.0f, 90.0f);
 
 	// Configure character movement
-	GetCharacterMovement()->MaxWalkSpeed = 400.0f;
+	GetCharacterMovement()->MaxWalkSpeed = RunSpeed;
 
 	// create the camera boom
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 
-	CameraBoom->TargetArmLength = DefaultCameraDistance;
+	DesiredCombatCameraDistance = ClampCombatCameraDistance(DefaultCameraDistance);
+	CameraBoom->TargetArmLength = DesiredCombatCameraDistance;
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bEnableCameraLag = true;
 	CameraBoom->bEnableCameraRotationLag = true;
@@ -100,6 +103,121 @@ void ACombatCharacter::ToggleCamera()
 {
 	// call the BP hook
 	BP_ToggleCamera();
+}
+
+void ACombatCharacter::HandleWalkRunToggleReleased()
+{
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (PlayerController->IsMoveInputIgnored())
+		{
+			return;
+		}
+	}
+
+	SetWalkModeEnabled(!bIsWalkModeEnabled);
+}
+
+void ACombatCharacter::HandleSprintPressed()
+{
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (PlayerController->IsMoveInputIgnored())
+		{
+			return;
+		}
+	}
+
+	SetSprinting(true);
+}
+
+void ACombatCharacter::HandleSprintReleased()
+{
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (PlayerController->IsMoveInputIgnored())
+		{
+			return;
+		}
+	}
+
+	SetSprinting(false);
+}
+
+void ACombatCharacter::SetWalkModeEnabled(bool bNewWalkModeEnabled)
+{
+	if (bIsWalkModeEnabled == bNewWalkModeEnabled)
+	{
+		return;
+	}
+
+	bIsWalkModeEnabled = bNewWalkModeEnabled;
+	RefreshMovementSpeed();
+
+	if (!HasAuthority())
+	{
+		ServerSetWalkModeEnabled(bNewWalkModeEnabled);
+	}
+}
+
+void ACombatCharacter::SetSprinting(bool bNewSprinting)
+{
+	if (bIsSprinting == bNewSprinting)
+	{
+		return;
+	}
+
+	bIsSprinting = bNewSprinting;
+	RefreshMovementSpeed();
+
+	if (!HasAuthority())
+	{
+		ServerSetSprinting(bNewSprinting);
+	}
+}
+
+void ACombatCharacter::RefreshMovementSpeed()
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = GetDesiredMovementSpeed();
+	}
+}
+
+float ACombatCharacter::GetDesiredMovementSpeed() const
+{
+	const float BaseSpeed = bIsWalkModeEnabled ? WalkSpeed : RunSpeed;
+	const float BoostedSpeed = bIsWalkModeEnabled ? FastWalkSpeed : SprintSpeed;
+	return bIsSprinting ? BoostedSpeed : BaseSpeed;
+}
+
+void ACombatCharacter::ServerSetWalkModeEnabled_Implementation(bool bNewWalkModeEnabled)
+{
+	bIsWalkModeEnabled = bNewWalkModeEnabled;
+	RefreshMovementSpeed();
+}
+
+void ACombatCharacter::ServerSetSprinting_Implementation(bool bNewSprinting)
+{
+	bIsSprinting = bNewSprinting;
+	RefreshMovementSpeed();
+}
+
+void ACombatCharacter::ZoomCameraIn()
+{
+	DoCameraZoom(-CombatCameraZoomStep);
+}
+
+void ACombatCharacter::ZoomCameraOut()
+{
+	DoCameraZoom(CombatCameraZoomStep);
+}
+
+float ACombatCharacter::ClampCombatCameraDistance(float DesiredDistance) const
+{
+	const float MinDistance = FMath::Min(CombatCameraMinDistance, CombatCameraMaxDistance);
+	const float MaxDistance = FMath::Max(CombatCameraMinDistance, CombatCameraMaxDistance);
+	return FMath::Clamp(DesiredDistance, MinDistance, MaxDistance);
 }
 
 void ACombatCharacter::HandleStarterWeaponChanged()
@@ -217,22 +335,122 @@ void ACombatCharacter::RefreshStarterWeaponVisual()
 	EquippedStarterWeaponVisual->SetStaticMesh(LoadStarterWeaponVisualMesh(CurrentStarterWeapon));
 	EquippedStarterWeaponVisual->SetVisibility(EquippedStarterWeaponVisual->GetStaticMesh() != nullptr, true);
 
+	constexpr float ImportedSwordScale = 0.0175f;
+	constexpr float ImportedSecondaryWeaponSwordRatio = 0.5f;
+	const auto GetStarterWeaponMaxExtent = [](const UStaticMesh* StaticMesh) -> float
+	{
+		if (!StaticMesh)
+		{
+			return 0.0f;
+		}
+
+		const FVector BoxExtent = StaticMesh->GetBounds().BoxExtent;
+		return static_cast<float>(FMath::Max3(BoxExtent.X, BoxExtent.Y, BoxExtent.Z));
+	};
+
+	const auto ComputeStarterWeaponScaleFromSwordRatio = [&](const UStaticMesh* WeaponMesh, float SwordScale, float SwordRatio)
+	{
+		if (!WeaponMesh)
+		{
+			return SwordScale * SwordRatio;
+		}
+
+		const float WeaponMaxExtent = GetStarterWeaponMaxExtent(WeaponMesh);
+		if (WeaponMaxExtent <= KINDA_SMALL_NUMBER)
+		{
+			return SwordScale * SwordRatio;
+		}
+
+		if (const UStaticMesh* SwordReferenceMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/One_Handed_Sword/T0/one_handed_sword_T0.one_handed_sword_T0")))
+		{
+			const float SwordMaxExtent = GetStarterWeaponMaxExtent(SwordReferenceMesh);
+			if (SwordMaxExtent > KINDA_SMALL_NUMBER)
+			{
+				const float TargetDisplayedMaxExtent = SwordMaxExtent * SwordScale * SwordRatio;
+				return TargetDisplayedMaxExtent / WeaponMaxExtent;
+			}
+		}
+
+		return SwordScale * SwordRatio;
+	};
+
+	const auto BuildStarterWeaponGripLocation = [&](const UStaticMesh* WeaponMesh, float WeaponScale, float GripRatio = 0.40f, float VerticalOffset = -10.0f)
+	{
+		FVector RelativeLocation(0.0f, 0.0f, VerticalOffset);
+
+		if (!WeaponMesh)
+		{
+			return RelativeLocation;
+		}
+
+		const FVector BoxExtent = WeaponMesh->GetBounds().BoxExtent;
+		const float GripOffset = FMath::Max3(BoxExtent.X, BoxExtent.Y, BoxExtent.Z) * WeaponScale * GripRatio;
+
+		if (BoxExtent.X >= BoxExtent.Y && BoxExtent.X >= BoxExtent.Z)
+		{
+			RelativeLocation.X -= GripOffset;
+		}
+		else if (BoxExtent.Y >= BoxExtent.Z)
+		{
+			RelativeLocation.Y -= GripOffset;
+		}
+		else
+		{
+			RelativeLocation.Z -= GripOffset;
+		}
+
+		return RelativeLocation;
+	};
+
+	const bool bUsingFallbackStarterSwordMesh = EquippedStarterWeaponVisual->GetStaticMesh()
+		&& EquippedStarterWeaponVisual->GetStaticMesh()->GetPathName() == TEXT("/Engine/BasicShapes/Cube.Cube");
+
 	switch (CurrentStarterWeapon)
 	{
 	case ECombatStarterWeaponType::Sword:
-		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(6.0f, 0.0f, 0.0f));
-		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
-		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.06f, 0.02f, 0.75f));
+		if (!bUsingFallbackStarterSwordMesh)
+		{
+			const UStaticMesh* SwordMesh = EquippedStarterWeaponVisual->GetStaticMesh();
+			EquippedStarterWeaponVisual->SetRelativeLocation(BuildStarterWeaponGripLocation(SwordMesh, ImportedSwordScale));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(ImportedSwordScale, ImportedSwordScale, ImportedSwordScale));
+		}
+		else
+		{
+			EquippedStarterWeaponVisual->SetRelativeLocation(FVector(6.0f, 0.0f, 0.0f));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.06f, 0.02f, 0.75f));
+		}
 		break;
 	case ECombatStarterWeaponType::Dagger:
-		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
-		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
-		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.45f));
+		if (const UStaticMesh* DaggerMesh = EquippedStarterWeaponVisual->GetStaticMesh())
+		{
+			const float ImportedDaggerScale = ComputeStarterWeaponScaleFromSwordRatio(DaggerMesh, ImportedSwordScale, ImportedSecondaryWeaponSwordRatio);
+			EquippedStarterWeaponVisual->SetRelativeLocation(BuildStarterWeaponGripLocation(DaggerMesh, ImportedDaggerScale));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(ImportedDaggerScale, ImportedDaggerScale, ImportedDaggerScale));
+		}
+		else
+		{
+			EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.04f, 0.04f, 0.45f));
+		}
 		break;
 	case ECombatStarterWeaponType::ChannelingOrb:
-		EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
-		EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
-		EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.16f, 0.16f, 0.16f));
+		if (const UStaticMesh* WandMesh = EquippedStarterWeaponVisual->GetStaticMesh())
+		{
+			const float ImportedWandScale = ComputeStarterWeaponScaleFromSwordRatio(WandMesh, ImportedSwordScale, ImportedSecondaryWeaponSwordRatio);
+			EquippedStarterWeaponVisual->SetRelativeLocation(BuildStarterWeaponGripLocation(WandMesh, ImportedWandScale));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(ImportedWandScale, ImportedWandScale, ImportedWandScale));
+		}
+		else
+		{
+			EquippedStarterWeaponVisual->SetRelativeLocation(FVector(4.0f, 0.0f, 0.0f));
+			EquippedStarterWeaponVisual->SetRelativeRotation(FRotator::ZeroRotator);
+			EquippedStarterWeaponVisual->SetRelativeScale3D(FVector(0.08f, 0.08f, 0.45f));
+		}
 		break;
 	default:
 		EquippedStarterWeaponVisual->SetVisibility(false, true);
@@ -245,11 +463,23 @@ UStaticMesh* ACombatCharacter::LoadStarterWeaponVisualMesh(ECombatStarterWeaponT
 	switch (StarterWeapon)
 	{
 	case ECombatStarterWeaponType::Sword:
+		if (UStaticMesh* ImportedSwordMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/One_Handed_Sword/T0/one_handed_sword_T0.one_handed_sword_T0")))
+		{
+			return ImportedSwordMesh;
+		}
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	case ECombatStarterWeaponType::Dagger:
+		if (UStaticMesh* ImportedDaggerMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/Dagger/T0/Dagger_T0.Dagger_T0")))
+		{
+			return ImportedDaggerMesh;
+		}
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	case ECombatStarterWeaponType::ChannelingOrb:
-		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
+		if (UStaticMesh* ImportedWandMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/Magic_Wound/T0/Magic_Staff_T0.Magic_Staff_T0")))
+		{
+			return ImportedWandMesh;
+		}
+		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	default:
 		return nullptr;
 	}
@@ -282,6 +512,28 @@ void ACombatCharacter::DoLook(float Yaw, float Pitch)
 		// add yaw and pitch input to controller
 		AddControllerYawInput(Yaw);
 		AddControllerPitchInput(Pitch);
+	}
+}
+
+void ACombatCharacter::DoCameraZoom(float DeltaArmLength)
+{
+	if (CurrentHP <= 0.0f || CameraBoom == nullptr || FMath::IsNearlyZero(DeltaArmLength))
+	{
+		return;
+	}
+
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (PlayerController->IsLookInputIgnored())
+		{
+			return;
+		}
+	}
+
+	DesiredCombatCameraDistance = ClampCombatCameraDistance(DesiredCombatCameraDistance + DeltaArmLength);
+	if (CombatCameraZoomInterpSpeed <= 0.0f)
+	{
+		CameraBoom->TargetArmLength = DesiredCombatCameraDistance;
 	}
 }
 
@@ -616,7 +868,8 @@ void ACombatCharacter::HandleDeath()
 	LifeBar->SetHiddenInGame(true);
 
 	// pull back the camera
-	GetCameraBoom()->TargetArmLength = DeathCameraDistance;
+	DesiredCombatCameraDistance = ClampCombatCameraDistance(DeathCameraDistance);
+	GetCameraBoom()->TargetArmLength = DesiredCombatCameraDistance;
 
 	// schedule respawning
 	GetWorld()->GetTimerManager().SetTimer(RespawnTimer, this, &ACombatCharacter::RespawnCharacter, RespawnTime, false);
@@ -681,6 +934,33 @@ void ACombatCharacter::Landed(const FHitResult& Hit)
 	}
 }
 
+void ACombatCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (CameraBoom == nullptr)
+	{
+		return;
+	}
+
+	DesiredCombatCameraDistance = ClampCombatCameraDistance(DesiredCombatCameraDistance);
+
+	if (CombatCameraZoomInterpSpeed <= 0.0f)
+	{
+		CameraBoom->TargetArmLength = DesiredCombatCameraDistance;
+		return;
+	}
+
+	const float CurrentDistance = CameraBoom->TargetArmLength;
+	if (FMath::IsNearlyEqual(CurrentDistance, DesiredCombatCameraDistance, CombatCameraZoomSnapTolerance))
+	{
+		CameraBoom->TargetArmLength = DesiredCombatCameraDistance;
+		return;
+	}
+
+	CameraBoom->TargetArmLength = FMath::FInterpTo(CurrentDistance, DesiredCombatCameraDistance, DeltaSeconds, CombatCameraZoomInterpSpeed);
+}
+
 void ACombatCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -690,7 +970,9 @@ void ACombatCharacter::BeginPlay()
 	check(LifeBarWidget);
 
 	// initialize the camera
-	GetCameraBoom()->TargetArmLength = DefaultCameraDistance;
+	DesiredCombatCameraDistance = ClampCombatCameraDistance(DefaultCameraDistance);
+	GetCameraBoom()->TargetArmLength = DesiredCombatCameraDistance;
+	RefreshMovementSpeed();
 
 	// save the relative transform for the mesh so we can reset the ragdoll later
 	MeshStartingTransform = GetMesh()->GetRelativeTransform();
@@ -741,9 +1023,19 @@ void ACombatCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 		// Charged Attack
 		EnhancedInputComponent->BindAction(ChargedAttackAction, ETriggerEvent::Started, this, &ACombatCharacter::ChargedAttackPressed);
 		EnhancedInputComponent->BindAction(ChargedAttackAction, ETriggerEvent::Completed, this, &ACombatCharacter::ChargedAttackReleased);
+		EnhancedInputComponent->BindAction(ChargedAttackAction, ETriggerEvent::Canceled, this, &ACombatCharacter::ChargedAttackReleased);
 
 		// Camera Side Toggle
 		EnhancedInputComponent->BindAction(ToggleCameraAction, ETriggerEvent::Triggered, this, &ACombatCharacter::ToggleCamera);
+	}
+
+	if (PlayerInputComponent)
+	{
+		PlayerInputComponent->BindKey(EKeys::MouseScrollUp, IE_Pressed, this, &ACombatCharacter::ZoomCameraIn);
+		PlayerInputComponent->BindKey(EKeys::MouseScrollDown, IE_Pressed, this, &ACombatCharacter::ZoomCameraOut);
+		PlayerInputComponent->BindKey(EKeys::W, IE_Released, this, &ACombatCharacter::HandleWalkRunToggleReleased);
+		PlayerInputComponent->BindKey(EKeys::RightShift, IE_Pressed, this, &ACombatCharacter::HandleSprintPressed);
+		PlayerInputComponent->BindKey(EKeys::RightShift, IE_Released, this, &ACombatCharacter::HandleSprintReleased);
 	}
 }
 

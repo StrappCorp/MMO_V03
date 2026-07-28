@@ -80,6 +80,22 @@ protected:
 	UPROPERTY(EditAnywhere, Category ="Input")
 	UInputAction* ToggleCameraAction;
 
+	/** Default grounded move speed used for normal walking. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(ClampMin=0, Units="cm/s"))
+	float WalkSpeed = 150.0f;
+
+	/** Default grounded move speed used for the default run gait. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(ClampMin=0, Units="cm/s"))
+	float RunSpeed = 400.0f;
+
+	/** Temporary speed boost used when sprinting from walk mode. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(ClampMin=0, Units="cm/s"))
+	float FastWalkSpeed = 300.0f;
+
+	/** Temporary speed boost used when sprinting from run mode. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Movement", meta=(ClampMin=0, Units="cm/s"))
+	float SprintSpeed = 700.0f;
+
 	/** Max amount of HP the character will have on respawn */
 	UPROPERTY(EditAnywhere, Category="Damage", meta = (ClampMin = 0, ClampMax = 100))
 	float MaxHP = 5.0f;
@@ -174,6 +190,12 @@ protected:
 	/** If true, the character wants to release and resolve the charged attack. */
 	bool bHasReleasedChargedAttack = false;
 
+	/** Tracks whether the walk base gait is active. False means the default run gait is active. */
+	bool bIsWalkModeEnabled = false;
+
+	/** Tracks whether the temporary movement boost is currently held. */
+	bool bIsSprinting = false;
+
 	/** Camera boom length while the character is dead */
 	UPROPERTY(EditAnywhere, Category="Camera", meta = (ClampMin = 0, ClampMax = 1000, Units = "cm"))
 	float DeathCameraDistance = 400.0f;
@@ -181,6 +203,29 @@ protected:
 	/** Camera boom length when the character respawns */
 	UPROPERTY(EditAnywhere, Category="Camera", meta = (ClampMin = 0, ClampMax = 1000, Units = "cm"))
 	float DefaultCameraDistance = 100.0f;
+
+	/** Minimum spring-arm length allowed for live camera zoom. */
+	UPROPERTY(EditAnywhere, Category="Camera", meta=(ClampMin=0, ClampMax=1000, Units="cm"))
+	float CombatCameraMinDistance = 75.0f;
+
+	/** Maximum spring-arm length allowed for live camera zoom. */
+	UPROPERTY(EditAnywhere, Category="Camera", meta=(ClampMin=0, ClampMax=1500, Units="cm"))
+	float CombatCameraMaxDistance = 450.0f;
+
+	/** Spring-arm delta applied per mouse-wheel notch while alive. */
+	UPROPERTY(EditAnywhere, Category="Camera", meta=(ClampMin=1, ClampMax=250, Units="cm"))
+	float CombatCameraZoomStep = 30.0f;
+
+	/** Interpolation speed used to smooth mouse-wheel zoom updates. Set to 0 for instant snapping. */
+	UPROPERTY(EditAnywhere, Category="Camera", meta=(ClampMin=0, ClampMax=30))
+	float CombatCameraZoomInterpSpeed = 10.0f;
+
+	/** Distance threshold below which the smoothed zoom snaps to the exact target. */
+	UPROPERTY(EditAnywhere, Category="Camera", meta=(ClampMin=0, ClampMax=50, Units="cm"))
+	float CombatCameraZoomSnapTolerance = 2.0f;
+
+	/** Target spring-arm length pursued by the combat zoom. */
+	float DesiredCombatCameraDistance = 100.0f;
 
 	/** Time to wait before respawning the character */
 	UPROPERTY(EditAnywhere, Category="Respawn", meta = (ClampMin = 0, ClampMax = 10, Units = "s"))
@@ -241,6 +286,16 @@ protected:
 
 	/** Called for toggle camera side input */
 	void ToggleCamera();
+	void HandleWalkRunToggleReleased();
+	void HandleSprintPressed();
+	void HandleSprintReleased();
+	void SetWalkModeEnabled(bool bNewWalkModeEnabled);
+	void SetSprinting(bool bNewSprinting);
+	void RefreshMovementSpeed();
+	float GetDesiredMovementSpeed() const;
+	void ZoomCameraIn();
+	void ZoomCameraOut();
+	float ClampCombatCameraDistance(float DesiredDistance) const;
 
 	/** BP hook to animate the camera side switch */
 	UFUNCTION(BlueprintImplementableEvent, Category="Combat")
@@ -255,6 +310,10 @@ public:
 	/** Handles look inputs from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
 	virtual void DoLook(float Yaw, float Pitch);
+
+	/** Handles combat camera zoom deltas from either controls or UI interfaces. Positive values move the camera away. */
+	UFUNCTION(BlueprintCallable, Category="Input")
+	virtual void DoCameraZoom(float DeltaArmLength);
 
 	/** Handles combo attack pressed from either controls or UI interfaces */
 	UFUNCTION(BlueprintCallable, Category="Input")
@@ -347,6 +406,8 @@ protected:
 
 protected:
 
+	virtual void Tick(float DeltaSeconds) override;
+
 	/** Initialization */
 	virtual void BeginPlay() override;
 
@@ -370,6 +431,12 @@ protected:
 	void ApplyStarterWeaponState(ECombatStarterWeaponType StarterWeapon, bool bStarterWeaponClaimed);
 	void RefreshStarterWeaponVisual();
 	UStaticMesh* LoadStarterWeaponVisualMesh(ECombatStarterWeaponType StarterWeapon) const;
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetWalkModeEnabled(bool bNewWalkModeEnabled);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetSprinting(bool bNewSprinting);
 
 public:
 

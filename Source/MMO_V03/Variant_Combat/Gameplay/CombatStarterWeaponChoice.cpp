@@ -140,22 +140,93 @@ void ACombatStarterWeaponChoice::RefreshChoicePresentation()
 
 	VisualMesh->SetStaticMesh(ResolveChoiceMesh());
 
+	constexpr float ImportedSwordDisplayScale = 0.033333f;
+	constexpr float ImportedSecondaryWeaponSwordRatio = 0.5f;
+	const auto GetWeaponMaxExtent = [](const UStaticMesh* StaticMesh) -> float
+	{
+		if (!StaticMesh)
+		{
+			return 0.0f;
+		}
+
+		const FVector BoxExtent = StaticMesh->GetBounds().BoxExtent;
+		return static_cast<float>(FMath::Max3(BoxExtent.X, BoxExtent.Y, BoxExtent.Z));
+	};
+
+	const auto ComputeScaleFromSwordRatio = [&](const UStaticMesh* WeaponMesh, float SwordScale, float SwordRatio)
+	{
+		if (!WeaponMesh)
+		{
+			return SwordScale * SwordRatio;
+		}
+
+		const float WeaponMaxExtent = GetWeaponMaxExtent(WeaponMesh);
+		if (WeaponMaxExtent <= KINDA_SMALL_NUMBER)
+		{
+			return SwordScale * SwordRatio;
+		}
+
+		if (const UStaticMesh* SwordReferenceMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/One_Handed_Sword/T0/one_handed_sword_T0.one_handed_sword_T0")))
+		{
+			const float SwordMaxExtent = GetWeaponMaxExtent(SwordReferenceMesh);
+			if (SwordMaxExtent > KINDA_SMALL_NUMBER)
+			{
+				const float TargetDisplayedMaxExtent = SwordMaxExtent * SwordScale * SwordRatio;
+				return TargetDisplayedMaxExtent / WeaponMaxExtent;
+			}
+		}
+
+		return SwordScale * SwordRatio;
+	};
+
+	const bool bUsingFallbackChoiceMesh = VisualMesh->GetStaticMesh()
+		&& VisualMesh->GetStaticMesh()->GetPathName().StartsWith(TEXT("/Engine/BasicShapes/"));
+
 	switch (StarterWeaponType)
 	{
 	case ECombatStarterWeaponType::Sword:
-		VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 95.0f));
-		VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		VisualMesh->SetRelativeScale3D(FVector(0.35f, 0.12f, 1.25f));
+		if (!bUsingFallbackChoiceMesh)
+		{
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+			VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			VisualMesh->SetRelativeScale3D(FVector(ImportedSwordDisplayScale, ImportedSwordDisplayScale, ImportedSwordDisplayScale));
+		}
+		else
+		{
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 95.0f));
+			VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			VisualMesh->SetRelativeScale3D(FVector(0.35f, 0.12f, 1.25f));
+		}
 		break;
 	case ECombatStarterWeaponType::Dagger:
-		VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 95.0f));
-		VisualMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
-		VisualMesh->SetRelativeScale3D(FVector(0.20f, 0.20f, 0.80f));
+		if (!bUsingFallbackChoiceMesh)
+		{
+			const float ImportedDaggerScale = ComputeScaleFromSwordRatio(VisualMesh->GetStaticMesh(), ImportedSwordDisplayScale, ImportedSecondaryWeaponSwordRatio);
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+			VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			VisualMesh->SetRelativeScale3D(FVector(ImportedDaggerScale, ImportedDaggerScale, ImportedDaggerScale));
+		}
+		else
+		{
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 95.0f));
+			VisualMesh->SetRelativeRotation(FRotator(90.0f, 0.0f, 0.0f));
+			VisualMesh->SetRelativeScale3D(FVector(0.20f, 0.20f, 0.80f));
+		}
 		break;
 	case ECombatStarterWeaponType::ChannelingOrb:
-		VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
-		VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
-		VisualMesh->SetRelativeScale3D(FVector(0.45f, 0.45f, 0.45f));
+		if (!bUsingFallbackChoiceMesh)
+		{
+			const float ImportedWandScale = ComputeScaleFromSwordRatio(VisualMesh->GetStaticMesh(), ImportedSwordDisplayScale, ImportedSecondaryWeaponSwordRatio);
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+			VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			VisualMesh->SetRelativeScale3D(FVector(ImportedWandScale, ImportedWandScale, ImportedWandScale));
+		}
+		else
+		{
+			VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
+			VisualMesh->SetRelativeRotation(FRotator::ZeroRotator);
+			VisualMesh->SetRelativeScale3D(FVector(0.45f, 0.45f, 0.45f));
+		}
 		break;
 	default:
 		VisualMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 90.0f));
@@ -178,10 +249,22 @@ UStaticMesh* ACombatStarterWeaponChoice::ResolveChoiceMesh() const
 	switch (StarterWeaponType)
 	{
 	case ECombatStarterWeaponType::Sword:
+		if (UStaticMesh* ImportedSwordMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/One_Handed_Sword/T0/one_handed_sword_T0.one_handed_sword_T0")))
+		{
+			return ImportedSwordMesh;
+		}
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
 	case ECombatStarterWeaponType::Dagger:
+		if (UStaticMesh* ImportedDaggerMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/Dagger/T0/Dagger_T0.Dagger_T0")))
+		{
+			return ImportedDaggerMesh;
+		}
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
 	case ECombatStarterWeaponType::ChannelingOrb:
+		if (UStaticMesh* ImportedWandMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Game/Arthurians/Weapons/Magic_Wound/T0/Magic_Staff_T0.Magic_Staff_T0")))
+		{
+			return ImportedWandMesh;
+		}
 		return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
 	default:
 		return nullptr;
