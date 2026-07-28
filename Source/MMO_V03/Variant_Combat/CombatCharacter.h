@@ -108,6 +108,10 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Damage")
 	FLinearColor LifeBarColor;
 
+	/** If true, keep the life bar attached above Manny in the world. Disable this when using a fixed HUD bar. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Damage")
+	bool bShowWorldLifeBar = false;
+
 	/** Name of the pelvis bone, for damage ragdoll physics */
 	UPROPERTY(EditAnywhere, Category="Damage")
 	FName PelvisBoneName;
@@ -335,6 +339,7 @@ protected:
 
 	/** Resets the character's current HP to maximum */
 	void ResetHP();
+	void RefreshWorldLifeBarVisibility();
 
 	/** Performs a combo attack */
 	void ComboAttack();

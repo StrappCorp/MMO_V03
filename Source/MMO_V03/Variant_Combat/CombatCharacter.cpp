@@ -603,6 +603,17 @@ void ACombatCharacter::ResetHP()
 	LifeBarWidget->SetLifePercentage(1.0f);
 }
 
+void ACombatCharacter::RefreshWorldLifeBarVisibility()
+{
+	if (LifeBar == nullptr)
+	{
+		return;
+	}
+
+	LifeBar->SetVisibility(bShowWorldLifeBar, true);
+	LifeBar->SetHiddenInGame(!bShowWorldLifeBar);
+}
+
 void ACombatCharacter::ComboAttack()
 {
 	// raise the attacking flag
@@ -979,6 +990,7 @@ void ACombatCharacter::BeginPlay()
 
 	// set the life bar color
 	LifeBarWidget->SetBarColor(LifeBarColor);
+	RefreshWorldLifeBarVisibility();
 
 	// cache the baseline combat values before the starter weapon mutates them
 	CacheStarterWeaponBaseStats();
